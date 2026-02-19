@@ -33,36 +33,43 @@ class Brain:
         init_db()
 
     async def autonomous_search_and_store(self, intent: str):
-        query = intent.lower().replace("learn", "").replace("news", "").replace("search", "").strip()
+        # Clean the intent to extract the actual search query
+        query = intent.lower().replace("learn", "").replace("news", "").replace("search", "").replace("about", "").strip()
         if not query:
             query = intent.strip()
         
         try:
-            async with aiohttp.ClientSession() as session:
-                title = query.replace(" ", "_").replace(",", "")
+            # We MUST include a User-Agent, or Wikipedia blocks the request
+            headers = {
+                "User-Agent": "SovereignApp_V1/2026.02 (GodTierAgent; Contact: admin@localhost)"
+            }
+            
+            async with aiohttp.ClientSession(headers=headers) as session:
+                # Format the title correctly for Wikipedia's REST API
+                title = query.replace(" ", "_").title()
                 wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
-                async with session.get(wiki_url, timeout=12, headers={"User-Agent": "SovereignGodTier/1.0"}) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        extract = data.get('extract', 'Sovereign found basic info only.')
-                        title_found = data.get('title', query.capitalize())
-                        result = f"📖 SOVEREIGN WIKIPEDIA SUMMARY ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}):\n\n{title_found}\n\n{extract}\n\n✅ Saved permanently in Sovereign Vault."
+                
+                async with session.get(wiki_url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        result_text = data.get("extract", "Data acquired but extraction failed.")
                     else:
-                        result = f"📖 Sovereign checked Wikipedia - no detailed page for '{query}' yet."
-        except Exception as e:
-            result = f"⚠️ Search temporary issue. Sovereign is still acting on your command."
+                        result_text = f"Target '{query}' not found in primary databases."
 
-        try:
+            # Save the successful result to Persistent Memory
             conn = sqlite3.connect(DB_FILE)
             c = conn.cursor()
+            timestamp = datetime.datetime.now().isoformat()
             c.execute("INSERT INTO search_results (intent, result, timestamp) VALUES (?, ?, ?)", 
-                      (intent, result, datetime.datetime.now().isoformat()))
+                      (intent, result_text, timestamp))
             conn.commit()
             conn.close()
-        except:
-            pass
             
-        return result
+            return f"🧠 INTEL ACQUIRED: {result_text}"
+
+        except Exception as e:
+            logger.error(f"Brain Error: {e}")
+            return f"⚠️ System encountered friction analyzing '{query}'. Sovereign is maintaining secure posture."
 
 class Guardian:
     def start_defense_layer(self):
